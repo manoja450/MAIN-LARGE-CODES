@@ -1,8 +1,7 @@
 //Muon and Michel Electron Analysis Code
 //This code comprehensively analyses cosmic muon events and their subsequent Michel electron decay in a particle detector. The analysis includes:
 //PMT calibration using LED data Muon event selection with SiPM shower rejection
-//Michel electron identification in subsequent events Measurement of muon lifetime from time  differences Energy spectrum analysis of Michel electrons
-#include <iostream>
+//Michel electron identification in subsequent events Measurement of muon lifetime from time  differences Energy spectrum analysis of Michel electrons#include <iostream>
 #include <TFile.h>
 #include <TTree.h>
 #include <TH1F.h>
@@ -238,6 +237,18 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         "Trigger Bits Distribution;Trigger Bits;Events", 
         64, 0, 64);
 
+        // Set axis title sizes for all histograms
+    histDeltaT->GetXaxis()->SetTitleSize(0.055);
+    histDeltaT->GetYaxis()->SetTitleSize(0.055);
+    histMichelSpectrum->GetXaxis()->SetTitleSize(0.055);
+    histMichelSpectrum->GetYaxis()->SetTitleSize(0.055);
+    histMuonPMTHits->GetXaxis()->SetTitleSize(0.055);
+    histMuonPMTHits->GetYaxis()->SetTitleSize(0.055);
+    histSiPMMultiplicity->GetXaxis()->SetTitleSize(0.055);
+    histSiPMMultiplicity->GetYaxis()->SetTitleSize(0.055);
+    histTriggerBits->GetXaxis()->SetTitleSize(0.055);
+    histTriggerBits->GetYaxis()->SetTitleSize(0.055);
+
     int muonCount = 0, michelCount = 0;
     int totalTrigger34Events = 0;
 
@@ -337,6 +348,21 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
                                     const string& title, bool addCutLine = false, 
                                     double cutValue = 0) {
         TCanvas *c = new TCanvas(name.c_str(), title.c_str(), 1200, 800);
+
+        // Adjust margins: left, right, bottom, top
+        c->SetLeftMargin(0.12);
+        c->SetRightMargin(0.08);
+        c->SetBottomMargin(0.12);
+        c->SetTopMargin(0.08);
+        
+        // Set axis title offsets
+        hist->GetXaxis()->SetTitleOffset(0.9);
+        hist->GetYaxis()->SetTitleOffset(0.9);
+        
+        // Set label sizes
+        hist->GetXaxis()->SetLabelSize(0.04);
+        hist->GetYaxis()->SetLabelSize(0.04);
+
         hist->Draw();
         
         c->SaveAs((outputDir + "/" + name + ".png").c_str());
@@ -361,7 +387,14 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
                     decayFit->GetParameter(1), 
                     decayFit->GetParError(1)));
     
+
     histDeltaT->GetListOfFunctions()->Add(pt);
+    histDeltaT->GetXaxis()->SetRangeUser(1.5, 10);
+    histDeltaT->GetXaxis()->SetTitleSize(0.055);
+    histDeltaT->GetYaxis()->SetTitleSize(0.055);
+    histDeltaT->GetXaxis()->SetTitleOffset(0.9);
+    histDeltaT->GetYaxis()->SetTitleOffset(0.9);
+    histDeltaT->SetLineWidth(2);
     histDeltaT->GetXaxis()->SetRangeUser(1.5, 10); // Display 1.5-10 μs
     histDeltaT->Draw();
     c1->SaveAs((outputDir + "/time_difference.png").c_str());
