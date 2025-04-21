@@ -460,7 +460,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
                             michelEnergy += pe;
                         }
                     }
-                    if (michelPMTCount >= 6) {
+                    if (michelPMTCount >= 10) {
                         histMichelSpectrum_Accidental->Fill(michelEnergy);
                     }
                 }
