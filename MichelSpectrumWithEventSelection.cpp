@@ -300,7 +300,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     
     // Time difference between muon and Michel electron
     TH1F *histDeltaT = new TH1F("DeltaT",
-        "Muon-Michel Time Difference;Time to previous event(Muon)(#mus);Counts/0.1 #mus",
+        "Muon-Michel Time Difference;Time to previous event(Muon)(#mus);Counts/0.09 #mus",
         100, 1.0, 10.0);
     
     // Michel electron energy spectrum
