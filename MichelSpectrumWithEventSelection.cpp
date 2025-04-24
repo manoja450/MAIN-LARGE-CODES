@@ -367,6 +367,9 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
                 
                 double deltaT = (nsTime - muonTime) * 1e-3;
                 
+                // Exit if beyond our time window
+                if (deltaT > 20) break;
+                
                 if (deltaT >= 0 && deltaT <= 20) {
                     if (!passesMainEventSelection(pulseH, baselineRMS, area, peakPosition, mu1)) continue;
                     
@@ -384,31 +387,27 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
                     }
                     
                     if (michelPMTCount >= 10) {
-                        // Time cut and energy cut only for deltaT histogram and count
-                        if (michelEnergy < 300 && deltaT <= 10) {
-                            histDeltaT->Fill(deltaT);
-                            michelCount++;
-                        }
-                    
-                        // Energy spectrum for Michel signal (no energy cut)
+                        // Signal region (0-10 μs)
                         if (deltaT <= 10) {
+                            // For counting Michel electrons (with energy cut)
+                            if (michelEnergy < 300) {
+                                histDeltaT->Fill(deltaT);
+                                michelCount++;
+                            }
+                            // Energy spectrum without energy cut
                             histMichelSpectrum->Fill(michelEnergy);
                         }
-                    
-                        // Accidental Michel-like spectrum (no energy cut)
-                        if (michelEnergy < 300 && deltaT > 10 && deltaT <= 20) {
-                            histAccidental->Fill(deltaT);
-
-                            if (deltaT > 10 && deltaT <= 20) {
-                                histMichelSpectrum_Accidental->Fill(michelEnergy);
+                        // Control/accidental region (10-20 μs)
+                        else {
+                            // For accidental time spectrum (with energy cut)
+                            if (michelEnergy < 300) {
+                                histAccidental->Fill(deltaT);
                             }
+                            // Energy spectrum without energy cut
+                            histMichelSpectrum_Accidental->Fill(michelEnergy);
                         }
                     }
-                    
-                    
                 }
-                
-                if (deltaT > 20) break;
             }
         }
     }
@@ -525,12 +524,24 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     cSummary->SetBottomMargin(0.15);
     cSummary->SetTopMargin(0.10);
 
+    // Declare all plotting objects
     TGraphErrors *gTau = new TGraphErrors(taus.size());
+    TGraph *gChi2 = new TGraph(chi2_ndf.size());
+    TPad *pad2 = new TPad("pad2", "pad2", 0, 0, 1, 1);
+    TLatex *title = new TLatex();
+    TLegend *leg = new TLegend(0.65, 0.70, 0.85, 0.85);
+
+    // Initialize the graphs
     for (size_t i = 0; i < taus.size(); i++) {
         gTau->SetPoint(i, fitRanges[i].first, taus[i]);
         gTau->SetPointError(i, 0, tau_errors[i]);
     }
 
+    for (size_t i = 0; i < chi2_ndf.size(); i++) {
+        gChi2->SetPoint(i, fitRanges[i].first, chi2_ndf[i]);
+    }
+
+    // Configure the plotting objects
     gTau->SetTitle(";;");
     gTau->SetMarkerStyle(20);
     gTau->SetMarkerColor(kBlue);
@@ -546,15 +557,10 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     gTau->GetXaxis()->SetTitleOffset(1.2);
     gTau->Draw("APL");
 
-    TGraph *gChi2 = new TGraph(chi2_ndf.size());
-    for (size_t i = 0; i < chi2_ndf.size(); i++) {
-        gChi2->SetPoint(i, fitRanges[i].first, chi2_ndf[i]);
-    }
     gChi2->SetMarkerStyle(21);
     gChi2->SetMarkerColor(kRed);
     gChi2->SetLineColor(kRed);
 
-    TPad *pad2 = new TPad("pad2", "pad2", 0, 0, 1, 1);
     pad2->SetFillStyle(4000);
     pad2->SetFrameFillStyle(0);
     pad2->Range(0,0,1,1);
@@ -575,11 +581,9 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     gChi2->GetYaxis()->SetAxisColor(kRed);
     gChi2->Draw("APL Y+");
 
-    TLatex *title = new TLatex();
     title->SetTextSize(0.04);
     title->DrawLatexNDC(0.15, 0.92, "Fit Parameter Comparison vs. Fit Range");
 
-    TLegend *leg = new TLegend(0.65, 0.70, 0.85, 0.85);
     leg->AddEntry(gTau, "#tau (#mus)", "lp");
     leg->AddEntry(gChi2, "#chi^{2}/NDF", "lp");
     leg->SetTextSize(0.035);
@@ -589,9 +593,10 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
 
     cSummary->SaveAs((outputDir + "/fit_comparison.png").c_str());
 
-    // Utility function to plot histograms
-    auto plotHistogram = [&outputDir](TH1F* hist, const string& name,
-                                      const string& title, bool addCutLine = false, double cutValue = 0) {
+    // Define plotHistogram lambda with proper capture
+    auto plotHistogram = [outputDir](TH1F* hist, const string& name,
+                                   const string& title, bool addCutLine = false, 
+                                   double cutValue = 0) {
         TCanvas *c = new TCanvas(name.c_str(), title.c_str(), 1200, 800);
         c->SetLeftMargin(0.15);
         c->SetRightMargin(0.10);
@@ -632,6 +637,9 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     plotHistogram(histMuonSpectrum, "muon_spectrum", "Muon Spectrum ");
     
     // Clean up memory
+    for (auto func : fitFunctions) {
+        if (func) delete func;
+    }
     delete legEnergy;
     delete cEnergyOverlay;
     delete leg;
