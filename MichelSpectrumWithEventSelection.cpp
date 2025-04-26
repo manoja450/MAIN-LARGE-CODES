@@ -317,9 +317,9 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         
         if (triggerBits == 1) {
             lastBeamTime = nsTime;
-            continue;
+           continue;
         }
-        if ((nsTime - lastBeamTime) < 10000) continue;
+       if ((nsTime - lastBeamTime) < 10000) continue;
         
         histTriggerBits->Fill(triggerBits);
         
@@ -343,7 +343,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         }
         histMuonPMTHits->Fill(pmtHitCount);
         
-        if (pmtHitCount > 8) {
+        if (pmtHitCount > 10) {
             double sumPE = 0.0;
             for (int pmt = 0; pmt < N_PMTS; pmt++) {
                 int ch = PMT_CHANNEL_MAP[pmt];
@@ -360,7 +360,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
                 
                 if (triggerBits == 1) {
                     lastBeamTime = nsTime;
-                    continue;
+                   continue;
                 }
                 if ((nsTime - lastBeamTime) < 10000) continue;
                 
