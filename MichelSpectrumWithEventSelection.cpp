@@ -21,6 +21,7 @@
 #include <TLatex.h>
 #include <TGaxis.h>
 #include <algorithm>
+#include <TPaveStats.h>
 
 using namespace std;
 
@@ -62,9 +63,9 @@ Double_t SPEfit(Double_t *x, Double_t *par) {
     return term1 + term2 + term3 + term4;
 }
 
-// Muon decay exponential fitting function
+// Muon decay exponential fitting function with flat background term
 Double_t DecayFit(Double_t *x, Double_t *par) {
-    return par[0] * exp(-x[0]/par[1]);
+    return par[0] * exp(-x[0]/par[1]) + par[2];  // N0*exp(-t/τ) + C
 }
 
 
@@ -342,7 +343,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         }
         histMuonPMTHits->Fill(pmtHitCount);
         
-        if (pmtHitCount > 10) {
+        if (pmtHitCount > 8) {
             double sumPE = 0.0;
             for (int pmt = 0; pmt < N_PMTS; pmt++) {
                 int ch = PMT_CHANNEL_MAP[pmt];
@@ -458,7 +459,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     cAccidental->SetBottomMargin(0.15);
     cAccidental->SetTopMargin(0.10);
     
-    // Lifetime fitting
+    // Lifetime fitting with flat background term
     vector< pair<double,double> > fitRanges = {
         make_pair(1.0, 10.0), make_pair(1.5, 10.0), make_pair(2.0, 10.0), make_pair(2.5, 10.0)
     };
@@ -478,10 +479,13 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         double fitMin = fitRanges[i].first;
         double fitMax = fitRanges[i].second;
         
-        TF1 *expFit = new TF1(Form("expFit_%zu", i), DecayFit, fitMin, fitMax, 2);
-        expFit->SetParameters(histDeltaT->GetBinContent(histDeltaT->GetMaximumBin()), 2.2);
-        expFit->SetParLimits(0, 0, histDeltaT->GetBinContent(histDeltaT->GetMaximumBin()) * 2);
-        expFit->SetParLimits(1, 0.1, 10);
+        // Create fit function with 3 parameters (N0, tau, C)
+        TF1 *expFit = new TF1(Form("expFit_%zu", i), DecayFit, fitMin, fitMax, 3);
+        expFit->SetParameters(histDeltaT->GetBinContent(histDeltaT->GetMaximumBin()), 2.2, 15);
+        expFit->SetParLimits(0, 0, histDeltaT->GetBinContent(histDeltaT->GetMaximumBin()) * 2); // N0
+        expFit->SetParLimits(1, 0.1, 10);  // tau
+        expFit->SetParLimits(2, 0, histDeltaT->GetMaximum()/2);  // C (background)
+        expFit->SetParNames("N_{0}", "#tau", "C");
         
         histDeltaT->Fit(expFit, "LQ", "", fitMin, fitMax);
         
@@ -495,24 +499,43 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         fitFunctions.push_back(expFit);
         
         cout << Form("Fit Range: %.1f - %.1f µs", fitMin, fitMax) << endl;
+        cout << Form("N₀ = %.1f ± %.1f", expFit->GetParameter(0), expFit->GetParError(0)) << endl;
         cout << Form("τ = %.4f ± %.4f µs", tau, tauErr) << endl;
+        cout << Form("C = %.1f ± %.1f", expFit->GetParameter(2), expFit->GetParError(2)) << endl;
         cout << Form("χ² = %.1f", chi2_values[i]) << endl;
         cout << Form("NDF = %d", (int)ndf_values[i]) << endl;
         cout << Form("χ²/NDF = %.4f", chi2_ndf[i]) << endl;
         cout << "----------------------------------------" << endl;
         
         cFits->cd(i+1);
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.05);
+        
         histDeltaT->SetMarkerStyle(20);
         histDeltaT->Draw("PE");
+        expFit->SetLineColor(kRed);
         expFit->Draw("same");
         
-        TPaveText *pt = new TPaveText(0.60, 0.60, 0.80, 0.75, "NDC");
+        // Customize the statistics box
+        gStyle->SetOptFit(111);
+        gPad->Update();
+        
+        TPaveStats *stats = (TPaveStats*)histDeltaT->FindObject("stats");
+        if (stats) {
+            stats->SetX1NDC(0.60);
+            stats->SetX2NDC(0.90);
+            stats->SetY1NDC(0.60);
+            stats->SetY2NDC(0.90);
+            stats->SetTextColor(kRed);
+        }
+        
+        // Additional fit information
+        TPaveText *pt = new TPaveText(0.60, 0.40, 0.90, 0.55, "NDC");
         pt->SetFillColor(0);
         pt->SetTextSize(0.035);
         pt->SetBorderSize(0);
-        pt->AddText(Form("Fit Range: %.1f-%.1f #mus", fitMin, fitMax));
-        pt->AddText(Form("#tau = %.4f #pm %.4f #mus", tau, tauErr));
-        pt->AddText(Form("#chi^{2}/NDF = %.1f/%d", chi2_values[i], (int)ndf_values[i]));
+        //pt->AddText(Form("Fit Range: %.1f-%.1f #mus", fitMin, fitMax));
+        //pt->AddText(Form("#chi^{2}/NDF = %.1f/%d", chi2_values[i], (int)ndf_values[i]));
         pt->Draw("same");
     }
     cFits->SaveAs((outputDir + "/time_difference_fits.png").c_str());
@@ -524,14 +547,10 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     cSummary->SetBottomMargin(0.15);
     cSummary->SetTopMargin(0.10);
 
-    // Declare all plotting objects
+    // Initialize the graphs
     TGraphErrors *gTau = new TGraphErrors(taus.size());
     TGraph *gChi2 = new TGraph(chi2_ndf.size());
-    TPad *pad2 = new TPad("pad2", "pad2", 0, 0, 1, 1);
-    TLatex *title = new TLatex();
-    TLegend *leg = new TLegend(0.65, 0.70, 0.85, 0.85);
 
-    // Initialize the graphs
     for (size_t i = 0; i < taus.size(); i++) {
         gTau->SetPoint(i, fitRanges[i].first, taus[i]);
         gTau->SetPointError(i, 0, tau_errors[i]);
@@ -561,6 +580,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     gChi2->SetMarkerColor(kRed);
     gChi2->SetLineColor(kRed);
 
+    TPad *pad2 = new TPad("pad2", "pad2", 0, 0, 1, 1);
     pad2->SetFillStyle(4000);
     pad2->SetFrameFillStyle(0);
     pad2->Range(0,0,1,1);
@@ -581,9 +601,11 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
     gChi2->GetYaxis()->SetAxisColor(kRed);
     gChi2->Draw("APL Y+");
 
+    TLatex *title = new TLatex();
     title->SetTextSize(0.04);
     title->DrawLatexNDC(0.15, 0.92, "Fit Parameter Comparison vs. Fit Range");
 
+    TLegend *leg = new TLegend(0.65, 0.70, 0.85, 0.85);
     leg->AddEntry(gTau, "#tau (#mus)", "lp");
     leg->AddEntry(gChi2, "#chi^{2}/NDF", "lp");
     leg->SetTextSize(0.035);
