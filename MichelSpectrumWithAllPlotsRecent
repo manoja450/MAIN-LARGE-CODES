@@ -259,7 +259,7 @@ void analyzeMuonMichel(TChain *analysisChain, const Double_t *mu1, const string 
         "Michel Electron Energy (Accidental);Photoelectrons;Counts/10 p.e.", 100, 0, 1000);
     
     TH1F *histMuonPMTHits = new TH1F("MuonPMTHits",
-        "PMT Multiplicity;Number of PMTs hit;Counts/bin", 12, 0, 12);
+        "PMT Multiplicity;Number of PMTs hit;Counts/bin", 13, 0, 13);
     
     TH1F *histSiPMMultiplicity = new TH1F("SiPMMultiplicity",
         "SiPM Multiplicity;Number of SiPMs hit;Counts/bin", 10, 0, 10);
