@@ -9,7 +9,7 @@
 #include <TMath.h>
 #include <TStyle.h>
 #include <TLegend.h>
-#include <TPaveText.h>
+#include <TPaveStats.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -35,8 +35,9 @@ const int EV61_THRESHOLD = 1200;    // Beam on if channel 22 > this (ADC)
 const double MUON_ENERGY_THRESHOLD = 50; // Min PMT energy for muon (p.e.)
 const double MICHEL_ENERGY_MIN = 40;    // Min PMT energy for Michel (p.e.)
 const double MICHEL_ENERGY_MAX = 1000;  // Max PMT energy for Michel (p.e.)
+const double MICHEL_ENERGY_MAX_DT = 400; // Max PMT energy for dt plots (p.e.)
 const double MICHEL_DT_MIN = 0.8;       // Min time after muon for Michel (µs)
-const double MICHEL_DT_MAX = 20.0;      // Max time after muon for Michel (µs)
+const double MICHEL_DT_MAX = 16.0;      // Max time after muon for Michel (µs)
 const int ADCSIZE = 45;                 // Number of ADC samples per waveform
 
 // Generate unique output directory with timestamp
@@ -53,7 +54,6 @@ const std::vector<double> SIDE_VP_THRESHOLDS = {750, 950, 1200, 1375, 525, 700, 
 const double TOP_VP_THRESHOLD = 450; // Channels 20-21 (ADC)
 const double FIT_MIN = 1.0; // Fit range min (µs)
 const double FIT_MAX = 10.0; // Fit range max (µs)
-const double MICHEL_ENERGY_CUT_DT = 400; // Upper energy cut for h_dt_michel (p.e.)
 
 // Pulse structure
 struct pulse {
@@ -292,8 +292,8 @@ int main(int argc, char *argv[]) {
     // Define histograms
     TH1D* h_muon_energy = new TH1D("muon_energy", "Muon Energy Distribution (with Michel Electrons);Energy (p.e.);Counts/100 p.e.", 550, -500, 5000);
     TH1D* h_michel_energy = new TH1D("michel_energy", "Michel Electron Energy Distribution;Energy (p.e.);Counts/4 p.e.", 200, 0, 800);
-    TH1D* h_dt_michel = new TH1D("DeltaT", "Muon-Michel Time Difference ;Time to Previous event(Muon)(#mus);Counts/0.1 #mus", 200, 0, 16);
-    TH2D* h_energy_vs_dt = new TH2D("energy_vs_dt", "Michel Energy vs Time Difference;dt (#mus);Energy (p.e.)", 200, 0, 16, 200, 0, 2000);
+    TH1D* h_dt_michel = new TH1D("DeltaT", "Muon-Michel Time Difference ;Time to Previous event(Muon)(#mus);Counts/0.1 #mus", 160, 0, MICHEL_DT_MAX);
+    TH2D* h_energy_vs_dt = new TH2D("energy_vs_dt", "Michel Energy vs Time Difference;dt (#mus);Energy (p.e.)", 160, 0, 1000, 200, 0, 2000);
     TH1D* h_side_vp_muon = new TH1D("side_vp_muon", "Side Veto Energy for Muons;Energy (ADC);Counts", 200, 0, 5000);
     TH1D* h_top_vp_muon = new TH1D("top_vp_muon", "Top Veto Energy for Muons;Energy (ADC);Counts", 200, 0, 1000);
     TH1D* h_trigger_bits = new TH1D("trigger_bits", "Trigger Bits Distribution;Trigger Bits;Counts", 36, 0, 36);
@@ -355,7 +355,7 @@ int main(int argc, char *argv[]) {
             trigger_counts[triggerBits]++;
             // Check for out-of-range triggerBits
             if (triggerBits < 0 || triggerBits > 36) {
-                cout << "Warning: triggerBits = " << triggerBits << " out of histogram range (0–36) in file " << inputFileName << ", event " << eventID << endl;
+                cout << "Warning: triggerBits = " << triggerBits << " out of histogram range (0–31) in file " << inputFileName << ", event " << eventID << endl;
             }
 
             // Initialize pulse
@@ -522,27 +522,33 @@ int main(int argc, char *argv[]) {
                 veto_low = false;
             }
 
-            // Common Michel electron criteria (excluding energy cut)
-            bool is_michel_candidate = (
-                dt >= MICHEL_DT_MIN && dt <= MICHEL_DT_MAX &&
-                p.number >= 8 && veto_low &&
-                p.trigger != 1 && p.trigger != 4 && p.trigger != 8 && p.trigger != 16
-            );
+            // Define common Michel electron criteria
+            bool is_michel_candidate = p.energy >= MICHEL_ENERGY_MIN &&
+                                      p.energy <= MICHEL_ENERGY_MAX &&
+                                      dt >= MICHEL_DT_MIN &&
+                                      dt <= MICHEL_DT_MAX &&
+                                      p.number >= 8 &&
+                                      veto_low &&
+                                      p.trigger != 1 &&
+                                      p.trigger != 4 &&
+                                      p.trigger != 8 &&
+                                      p.trigger != 16;
 
-            // Fill h_michel_energy and h_energy_vs_dt with original energy cuts
-            if (is_michel_candidate &&
-                p.energy >= MICHEL_ENERGY_MIN && p.energy <= MICHEL_ENERGY_MAX) {
+            // Apply additional cut for dt and energy_vs_dt plots
+            bool is_michel_for_dt = is_michel_candidate && p.energy <= MICHEL_ENERGY_MAX_DT;
+
+            if (is_michel_candidate) {
                 p.is_michel = true;
                 num_michels++;
                 michel_muon_times.insert(last_muon_time);
+                // Fill Michel energy histogram with original criteria
                 h_michel_energy->Fill(p.energy);
-                h_energy_vs_dt->Fill(dt, p.energy);
             }
 
-            // Fill h_dt_michel with corrected energy cut
-            if (is_michel_candidate &&
-                p.energy >= MICHEL_ENERGY_MIN && p.energy <= MICHEL_ENERGY_CUT_DT) {
+            if (is_michel_for_dt) {
+                // Fill dt and energy_vs_dt histograms with stricter energy cut
                 h_dt_michel->Fill(dt);
+                h_energy_vs_dt->Fill(dt, p.energy);
             }
 
             p.last_muon_time = last_muon_time;
@@ -579,6 +585,7 @@ int main(int argc, char *argv[]) {
     // Generate analysis plots
     TCanvas *c = new TCanvas("c", "Analysis Plots", 1200, 800);
     gStyle->SetOptStat(1111);
+    gStyle->SetOptFit(1111);
 
     // Muon Energy
     c->Clear();
@@ -598,29 +605,22 @@ int main(int argc, char *argv[]) {
     c->SaveAs(plotName.c_str());
     cout << "Saved plot: " << plotName << endl;
 
-    // Michel dt with exponential fit and default stats box
+    // Michel dt with exponential fit
     c->Clear();
-    // Enable default stats and fit boxes
-    gStyle->SetOptStat(1111);
-    gStyle->SetOptFit(1111);
     h_dt_michel->SetMarkerStyle(20);
     h_dt_michel->SetMarkerSize(1.0);
-    h_dt_michel->GetXaxis()->SetTitle("Time to previous event(Muon)(#mus)");
-    h_dt_michel->GetXaxis()->SetRangeUser(0, 16);
+    h_dt_michel->GetXaxis()->SetTitle("Time to previous event(Muon)#mus");
     h_dt_michel->Draw("PE");
-
-    double N0 = 0, N0_err = 0, tau = 0, tau_err = 0, C = 0, C_err = 0, chi2 = 0, chi2_ndf = 0;
-    int ndf = 0, fitStatus = -1;
 
     if (h_dt_michel->GetEntries() > 5) {
         double integral = h_dt_michel->Integral(h_dt_michel->FindBin(FIT_MIN), h_dt_michel->FindBin(FIT_MAX));
         double bin_width = h_dt_michel->GetBinWidth(1);
         double N0_init = integral * bin_width / (FIT_MAX - FIT_MIN);
         double C_init = 0;
-        int bin_10 = h_dt_michel->FindBin(10.0);
-        int bin_20 = h_dt_michel->FindBin(20.0);
+        int bin_14 = h_dt_michel->FindBin(14.0);
+        int bin_16 = h_dt_michel->FindBin(16.0);
         double min_content = 1e9;
-        for (int i = bin_10; i <= bin_20; i++) {
+        for (int i = bin_14; i <= bin_16; i++) {
             double content = h_dt_michel->GetBinContent(i);
             if (content > 0 && content < min_content) min_content = content;
         }
@@ -635,23 +635,47 @@ int main(int argc, char *argv[]) {
         expFit->SetParNames("N_{0}", "#tau", "C");
         expFit->SetNpx(1000);
 
-        // Use quiet fit to avoid excessive output, but allow stats box display
-        fitStatus = h_dt_michel->Fit(expFit, "QRE", "", FIT_MIN, FIT_MAX);
+        int fitStatus = h_dt_michel->Fit(expFit, "RE", "", FIT_MIN, FIT_MAX);
         expFit->SetLineColor(kGreen);
         expFit->SetLineWidth(3);
         expFit->Draw("same");
+        gPad->Update();
+        cout << "Fit line drawn with color kRed (2), width 3" << endl;
 
-        N0 = expFit->GetParameter(0);
-        N0_err = expFit->GetParError(0);
-        tau = expFit->GetParameter(1);
-        tau_err = expFit->GetParError(1);
-        C = expFit->GetParameter(2);
-        C_err = expFit->GetParError(2);
-        chi2 = expFit->GetChisquare();
-        ndf = expFit->GetNDF();
-        chi2_ndf = ndf > 0 ? chi2 / ndf : 0;
+        TPaveStats *stats = (TPaveStats*)h_dt_michel->FindObject("stats");
+        if (!stats) {
+            cout << "Stats box not found, creating new TPaveStats" << endl;
+            stats = new TPaveStats(0.60, 0.60, 0.90, 0.90, "brNDC");
+            stats->SetName("stats");
+            h_dt_michel->GetListOfFunctions()->Add(stats);
+        } else {
+            cout << "Stats box found, updating content" << endl;
+        }
+        stats->SetTextColor(kRed);
+        stats->SetX1NDC(0.60);
+        stats->SetX2NDC(0.90);
+        stats->SetY1NDC(0.60);
+        stats->SetY2NDC(0.90);
+        stats->Clear();
+        stats->AddText("DeltaT");
+        stats->AddText(Form("#tau = %.4f #pm %.4f #mus", expFit->GetParameter(1), expFit->GetParError(1)));
+        stats->AddText(Form("#chi^{2}/NDF = %.4f", expFit->GetChisquare() / expFit->GetNDF()));
+        stats->AddText(Form("N_{0} = %.1f #pm %.1f", expFit->GetParameter(0), expFit->GetParError(0)));
+        stats->AddText(Form("C = %.1f #pm %.1f", expFit->GetParameter(2), expFit->GetParError(2)));
+        stats->Draw();
+        gPad->Update();
 
-        cout << "Exponential Fit Results (Michel dt, 1.0-10.0 µs):\n";
+        double N0 = expFit->GetParameter(0);
+        double N0_err = expFit->GetParError(0);
+        double tau = expFit->GetParameter(1);
+        double tau_err = expFit->GetParError(1);
+        double C = expFit->GetParameter(2);
+        double C_err = expFit->GetParError(2);
+        double chi2 = expFit->GetChisquare();
+        int ndf = expFit->GetNDF();
+        double chi2_ndf = ndf > 0 ? chi2 / ndf : 0;
+
+        cout << "Exponential Fit Results (Michel dt, 1.5-16 µs):\n";
         cout << Form("Fit Status: %d (0 = success)", fitStatus) << endl;
         cout << Form("N₀ = %.1f ± %.1f", N0, N0_err) << endl;
         cout << Form("τ = %.4f ± %.4f µs", tau, tau_err) << endl;
@@ -666,11 +690,10 @@ int main(int argc, char *argv[]) {
             cout << "Initial Parameters: N0 = " << N0_init << ", τ = 2.2 µs, C = " << C_init << endl;
             cout << "Fit results may be unreliable, but drawn for inspection." << endl;
         }
-
         delete expFit;
     } else {
         cout << "Warning: h_dt_michel has insufficient entries (" << h_dt_michel->GetEntries() << "), skipping exponential fit" << endl;
-        cout << "Check Michel electron detection criteria (e.g., MICHEL_ENERGY_MIN, MICHEL_ENERGY_CUT_DT, p.number, veto thresholds)." << endl;
+        cout << "Check Michel electron detection criteria (e.g., MICHEL_ENERGY_MIN, p.number, veto thresholds)." << endl;
     }
 
     c->Update();
@@ -727,6 +750,6 @@ int main(int argc, char *argv[]) {
     delete h_trigger_bits;
     delete c;
 
-    cout << "Analysis complete. Results saved in " << OUTPUT_DIR + "/ (*.png)" << endl;
+    cout << "Analysis complete. Results saved in " << OUTPUT_DIR << "/ (*.png)" << endl;
     return 0;
 }
